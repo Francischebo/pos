@@ -49,9 +49,17 @@ jobs:
 
       - name: Download Windows PHP zip
         shell: pwsh
+        env:
+          PHP_ZIP_URL: ${{ secrets.PHP_ZIP_URL }}
         run: |
-          $phpFile = "php-${{ env.PHP_VERSION }}-${{ env.PHP_VARIANT }}-Win32-${{ env.PHP_ARCH }}.zip"
-          $url = "https://windows.php.net/downloads/releases/archives/$phpFile"
+          # Prefer a repository secret URL when provided (private or pre-built PHP zip).
+          if ($env:PHP_ZIP_URL -and $env:PHP_ZIP_URL.Trim() -ne '') {
+            Write-Host "Using PHP zip from repository secret PHP_ZIP_URL"
+            $url = $env:PHP_ZIP_URL
+          } else {
+            $phpFile = "php-${{ env.PHP_VERSION }}-${{ env.PHP_VARIANT }}-Win32-${{ env.PHP_ARCH }}.zip"
+            $url = "https://windows.php.net/downloads/releases/archives/$phpFile"
+          }
           Write-Host "Downloading PHP from: $url"
           Invoke-WebRequest -Uri $url -OutFile php.zip -UseBasicParsing -TimeoutSec 180
           Expand-Archive -Path php.zip -DestinationPath php-extracted
