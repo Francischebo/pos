@@ -22,4 +22,4 @@ const host = typeof window !== 'undefined' ? window.location.hostname : 'localho
 export const WEBSOCKET_URL = __env_any.VITE_WEBSOCKET_URL || `ws://${host}:8082`;
 // Use Vite env var `VITE_PAYMENT_API_URL` for the backend URL (set at build time on Netlify),
 // otherwise fall back to the current dev host so the browser's origin can reach the PHP server.
-export const PAYMENT_API_URL = __env_any.VITE_PAYMENT_API_URL || `http://${host}:8000/payment_process.php`;
+export const PAYMENT_API_URL = __env_any.VITE_PAYMENT_API_URL || `http://${host}:8000/api/payment_process.php`;

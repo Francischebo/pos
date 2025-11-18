@@ -1,0 +1,114 @@
+name: Build Windows NSIS Installer
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-windows-installer:
+    name: Build Windows Installer (.exe)
+    runs-on: windows-latest
+    env:
+      PHP_VERSION: '8.2.12'
+      PHP_VARIANT: 'nts' # 'nts' (Non Thread Safe) or 'ts' - adjust if needed
+      PHP_ARCH: 'x64'
+      NODE_OPTIONS: '--max_old_space_size=4096'
+      ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: 'true'
+      ELECTRON_BUILDER_DISABLE_UPDATE_CHECK: 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          cache: 'npm'
+
+      - name: Cache npm and electron/node_modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.npm
+            node_modules
+            electron/node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Build frontend (Vite)
+        run: npm run build --if-present
+
+      - name: Install electron app dependencies
+        working-directory: electron
+        run: npm ci --no-audit --no-fund
+
+      - name: Download Windows PHP zip
+        shell: pwsh
+        run: |
+          $phpFile = "php-${{ env.PHP_VERSION }}-${{ env.PHP_VARIANT }}-Win32-${{ env.PHP_ARCH }}.zip"
+          $url = "https://windows.php.net/downloads/releases/archives/$phpFile"
+          Write-Host "Downloading PHP from: $url"
+          Invoke-WebRequest -Uri $url -OutFile php.zip -UseBasicParsing -TimeoutSec 180
+          Expand-Archive -Path php.zip -DestinationPath php-extracted
+          # Move extracted folder to a predictable name
+          $folder = Get-ChildItem -Path php-extracted -Directory | Select-Object -First 1
+          if (-not $folder) { throw "PHP archive extraction failed" }
+          Rename-Item -Path $folder.FullName -NewName php-runtime
+
+      - name: Configure PHP runtime (enable sqlite extensions)
+        shell: pwsh
+        run: |
+          Set-Location php-runtime
+          if (Test-Path php.ini-production) { Copy-Item php.ini-production php.ini -Force }
+          elseif (Test-Path php.ini-development) { Copy-Item php.ini-development php.ini -Force }
+          else { New-Item -Path php.ini -ItemType File -Force | Out-Null }
+          # Enable sqlite/pdo_sqlite
+          (Get-Content php.ini) -replace ';?\s*extension=pdo_sqlite', 'extension=pdo_sqlite' | Set-Content php.ini
+          (Get-Content php.ini) -replace ';?\s*extension=sqlite3', 'extension=sqlite3' | Set-Content php.ini
+          # Ensure extension_dir is correct
+          (Get-Content php.ini) -replace ';?\s*extension_dir\s*=\s*"ext"', 'extension_dir = "ext"' | Set-Content php.ini
+          Set-Location ..
+
+      - name: Prepare Electron packaging folder
+        shell: pwsh
+        run: |
+          # Ensure electron root has the runtime and backend files that the packaged app will use
+          Remove-Item -Recurse -Force electron/dist electron/api electron/php -ErrorAction SilentlyContinue
+          Copy-Item -Path dist -Destination electron/dist -Recurse
+          Copy-Item -Path api -Destination electron/api -Recurse
+          Copy-Item -Path php-runtime -Destination electron/php -Recurse
+          # Also copy any helpers or installer resources if present
+          if (Test-Path installer) { Copy-Item -Path installer -Destination electron/installer -Recurse }
+
+      - name: Verify PHP runtime
+        shell: pwsh
+        run: |
+          Write-Host "Verifying PHP runtime inside electron/php"
+          ./electron/scripts/check-php-runtime.ps1 -PhpPath electron/php
+
+      - name: Build Electron NSIS installer
+        working-directory: electron
+        shell: pwsh
+        env:
+          CSC_LINK: ''
+        run: |
+          Write-Host "Running electron-builder to produce NSIS installer (Windows)"
+          npx electron-builder --win nsis --x64 --config.extraMetadata.version=$(git describe --tags --always) || npx electron-builder --win nsis --x64
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobet-pos-windows-installer
+          path: electron/dist/*.exe
+
+      - name: Upload full output folder (fallback)
+        if: failure() || always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mobet-pos-windows-dist
+          path: electron/dist
