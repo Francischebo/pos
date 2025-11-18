@@ -1,0 +1,16 @@
+{
+    "name": "mpesa-pos-websocket-server",
+    "version": "1.0.0",
+    "description": "WebSocket server for real-time M-Pesa POS updates.",
+    "main": "index.js",
+    "scripts": {
+        "start": "node index.js"
+    },
+    "author": "",
+    "license": "ISC",
+    "dependencies": {
+        "cors": "^2.8.5",
+        "express": "^4.19.2",
+        "ws": "^8.17.0"
+    }
+}

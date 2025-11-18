@@ -1,0 +1,5 @@
+{
+  "name": "M-Pesa POS WebSocket Simulator",
+  "description": "A React-based Point of Sale (POS) system that simulates M-Pesa Daraja API integration using mock WebSockets for real-time payment status updates. This application demonstrates the frontend user experience of an M-Pesa checkout process.",
+  "requestFramePermissions": []
+}

@@ -1,0 +1,27 @@
+{
+    "name": "m-pesa-pos-websocket-simulator",
+    "private": true,
+    "version": "0.0.0",
+    "type": "module",
+    "scripts": {
+        "dev": "vite",
+        "build": "vite build",
+        "preview": "vite preview",
+        "start": "node index.js"
+    },
+    "dependencies": {
+        "express": "^4.18.2",
+        "ws": "^8.12.0",
+        "body-parser": "^1.20.1",
+        "cors": "^2.8.5",
+        "react": "^19.2.0",
+        "react-dom": "^19.2.0",
+        "@supabase/supabase-js": "^2.81.1"
+    },
+    "devDependencies": {
+        "@types/node": "^22.14.0",
+        "@vitejs/plugin-react": "^5.0.0",
+        "typescript": "~5.8.2",
+        "vite": "^6.2.0"
+    }
+}
