@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { PAYMENT_API_URL } from '../constants';
 import { PaymentStatus } from '../types';
 import { CheckCircleIcon } from './icons/CheckCircleIcon';
 import { XCircleIcon } from './icons/XCircleIcon';
@@ -9,8 +10,8 @@ interface MpesaModalProps {
   onClose: () => void;
   // onInitiate notifies parent of the customer details used to start the STK
   onInitiate?: (name: string, phone: string) => void;
-  // onPaymentSuccess receives the confirmed amount (number)
-  onPaymentSuccess: (amount: number) => void;
+  // onPaymentSuccess receives the confirmed amount and optional transaction id
+  onPaymentSuccess: (payload: { amount: number; transaction_id?: string }) => void;
   amount: number;
 }
 
@@ -34,10 +35,27 @@ export const MpesaModal = ({ isOpen, onClose, onPaymentSuccess, amount, onInitia
       setErrorMessage('Please enter a valid amount');
       return;
     }
-    // Record payment as M-Pesa and notify parent
-    setStatus(PaymentStatus.SUCCESS);
-    onPaymentSuccess(amt);
-    onClose();
+    // Record payment as M-Pesa by calling backend so it persists and returns transaction id
+    setStatus(PaymentStatus.PENDING_INPUT);
+    (async () => {
+      try {
+        const resp = await fetch(PAYMENT_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: '', amount: amt })
+        });
+        const data = await resp.json();
+        // Backend returns transaction_id when saved locally
+        const txId = data.transaction_id || data.checkout_request_id || null;
+        setStatus(PaymentStatus.SUCCESS);
+        onPaymentSuccess({ amount: amt, transaction_id: txId });
+      } catch (err: any) {
+        setStatus(PaymentStatus.FAILED);
+        setErrorMessage(err?.message || 'Failed to record payment');
+      } finally {
+        onClose();
+      }
+    })();
   };
 
   const handleTryAgain = () => {

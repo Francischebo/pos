@@ -1,0 +1,39 @@
+{
+    "name": "mobet-pos-electron",
+    "productName": "Mobet POS KENYA",
+    "version": "1.0.0",
+    "main": "electron/main.js",
+    "scripts": {
+        "start": "electron .",
+        "build:frontend": "cd .. && npm run build",
+        "package": "electron-builder --win --x64"
+    },
+    "devDependencies": {
+        "electron": "^26.0.0",
+        "electron-builder": "^24.0.0"
+    },
+    "build": {
+        "appId": "com.mobet.pos",
+        "productName": "Mobet POS KENYA",
+        "files": [
+            "**/*",
+            "!node_modules/**/src/**"
+        ],
+        "extraResources": [{
+            "from": "../",
+            "to": ".",
+            "filter": ["**/*", "!node_modules/**", "!electron/node_modules/**"]
+        }],
+        "nsis": {
+            "oneClick": false,
+            "perMachine": true,
+            "allowToChangeInstallationDirectory": true,
+            "createDesktopShortcut": "always",
+            "createStartMenuShortcut": "always"
+        },
+        "win": {
+            "target": ["nsis"],
+            "requestedExecutionLevel": "admin"
+        }
+    }
+}

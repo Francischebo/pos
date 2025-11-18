@@ -23,7 +23,12 @@ if (!$amount) {
 }
 
 if (empty($phone)) {
-    // Log the quick-record for audit
+    // Ensure sqlite helper is available for persistence
+    if (file_exists(__DIR__ . '/../sqlite_helper.php')) {
+        require_once __DIR__ . '/../sqlite_helper.php';
+    }
+
+    // Log the quick-record for audit (human-readable file)
     $logEntry = [
         'timestamp' => date('c'),
         'type' => 'mpesa_cashier_record',
@@ -32,13 +37,78 @@ if (empty($phone)) {
     ];
     @file_put_contents(__DIR__ . '/mpesa_quick_records.log', json_encode($logEntry) . PHP_EOL, FILE_APPEND | LOCK_EX);
 
+    // Try to persist as a completed transaction in local SQLite so it appears in reports/receipts
+    $txId = uniqid('tx_', true);
+    try {
+        if (function_exists('sqlite_init')) {
+            $db = sqlite_init();
+            $stmt = $db->prepare('INSERT OR REPLACE INTO transactions (id, date, items, subtotal, tax, total, amountPaid, customer, paymentMethods, status, type, user, synced) VALUES (:id, :date, :items, :subtotal, :tax, :total, :amountPaid, :customer, :paymentMethods, :status, :type, :user, 0)');
+            $now = date('c');
+            $items = json_encode([]);
+            $subtotal = 0.0;
+            $tax = 0.0;
+            $total = (float)$amount;
+            $amountPaid = (float)$amount;
+            $customer = json_encode(['name' => $name ?: null, 'phone' => null]);
+            $paymentMethods = json_encode([['method' => 'M-Pesa', 'amount' => $amountPaid, 'reference' => null, 'receipt' => null, 'recorded_by' => 'cashier']]);
+            $status = 'COMPLETED';
+            $type = 'Sale';
+            $user = json_encode(['id' => null, 'name' => null]);
+
+            $stmt->bindValue(':id', $txId, SQLITE3_TEXT);
+            $stmt->bindValue(':date', $now, SQLITE3_TEXT);
+            $stmt->bindValue(':items', $items, SQLITE3_TEXT);
+            $stmt->bindValue(':subtotal', $subtotal, SQLITE3_FLOAT);
+            $stmt->bindValue(':tax', $tax, SQLITE3_FLOAT);
+            $stmt->bindValue(':total', $total, SQLITE3_FLOAT);
+            $stmt->bindValue(':amountPaid', $amountPaid, SQLITE3_FLOAT);
+            $stmt->bindValue(':customer', $customer, SQLITE3_TEXT);
+            $stmt->bindValue(':paymentMethods', $paymentMethods, SQLITE3_TEXT);
+            $stmt->bindValue(':status', $status, SQLITE3_TEXT);
+            $stmt->bindValue(':type', $type, SQLITE3_TEXT);
+            $stmt->bindValue(':user', $user, SQLITE3_TEXT);
+
+            $res = $stmt->execute();
+            if ($res === false) {
+                // fallback: just return recorded but without tx id
+                echo json_encode([
+                    "ok" => true,
+                    "recorded" => true,
+                    "method" => "M-Pesa",
+                    "amount" => $amount,
+                    "message" => "Recorded as M-Pesa by cashier (db insert failed)."
+                ]);
+                exit;
+            }
+
+            // Add audit entry if helper available
+            if (function_exists('sqlite_insert_audit')) {
+                sqlite_insert_audit($txId, 'M-PESA_CASHIER_RECORD', json_encode($logEntry));
+            }
+
+            // Respond with created transaction id so frontend can print/track it
+            echo json_encode([
+                "ok" => true,
+                "recorded" => true,
+                "method" => "M-Pesa",
+                "amount" => $amount,
+                "transaction_id" => $txId,
+                "message" => "Recorded as M-Pesa by cashier and saved locally."
+            ]);
+            exit;
+        }
+    } catch (Exception $e) {
+        // log error but still respond success to frontend (we already wrote the human-readable log)
+        @file_put_contents(__DIR__ . '/mpesa_quick_records.log', json_encode(['error' => $e->getMessage(), 'time' => date('c')]) . PHP_EOL, FILE_APPEND | LOCK_EX);
+    }
+
     // Respond immediately as success - frontend records this as a M-Pesa payment
     echo json_encode([
         "ok" => true,
         "recorded" => true,
         "method" => "M-Pesa",
         "amount" => $amount,
-        "message" => "Recorded as M-Pesa by cashier (no STK sent)."
+        "message" => "Recorded as M-Pesa by cashier (no DB available)."
     ]);
     exit;
 }

@@ -29,11 +29,15 @@ const PaymentModal: React.FC<PaymentModalProps> = ({ total, onClose, onSaleCompl
 
   // Use functional updates to remove the dependency on `paidAmount` from the callback.
   // This makes the callback stable and prevents re-connections.
-	const handleMpesaSuccess = useCallback((payload: { amount: number }) => {
+
+	const handleMpesaSuccess = useCallback((payload: { amount: number; transaction_id?: string }) => {
 			const paid = payload.amount;
+			const transactionId = payload.transaction_id;
 			// Update payment methods and paid amount; if this completes the sale, finalize immediately
 			setPaymentMethods(prevPM => {
-				const updatedPM = [...prevPM, { method: 'M-Pesa', amount: paid }];
+				const pmEntry: any = { method: 'M-Pesa', amount: paid };
+				if (transactionId) pmEntry.transactionId = transactionId;
+				const updatedPM = [...prevPM, pmEntry];
 
 				setPaidAmount(prevPaidAmount => {
 					const newPaidAmount = prevPaidAmount + paid;

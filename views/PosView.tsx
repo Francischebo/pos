@@ -62,8 +62,10 @@ const PosView: React.FC<PosViewProps> = ({ products, customers, onSaleComplete, 
       onSaleComplete(cartItems, subtotal, tax, total, paymentMethods, customerDetails);
 
       const amountPaid = paymentMethods.reduce((sum, p) => sum + p.amount, 0);
+      // Prefer backend-provided transaction id if present in paymentMethods (e.g. M-Pesa cashier-record)
+      const backendTx = paymentMethods.find(p => (p as any).transactionId) as any | undefined;
       const newTransactionForPrinting: Transaction = {
-        id: `TXN-${Date.now()}`,
+        id: backendTx && backendTx.transactionId ? backendTx.transactionId : `TXN-${Date.now()}`,
         date: new Date(),
         items: cartItems,
         subtotal,

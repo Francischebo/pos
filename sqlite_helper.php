@@ -56,10 +56,52 @@ if (!class_exists('SQLite3')) {
     }
 }
 
+function get_app_data_dir() {
+    // Allow overriding via env var for testing/packaging
+    $env = getenv('MOBET_DATA_DIR');
+    if ($env && is_string($env) && $env !== '') return rtrim($env, "\/\\");
+
+    $os = PHP_OS_FAMILY ?? php_uname('s');
+    if (stripos($os, 'Windows') !== false) {
+        $base = getenv('APPDATA') ?: getenv('LOCALAPPDATA');
+        if (!$base) $base = __DIR__;
+        return rtrim($base, "\/\\") . DIRECTORY_SEPARATOR . 'Mobet POS KENYA';
+    }
+    // macOS
+    if (stripos($os, 'Darwin') !== false || stripos($os, 'Mac') !== false) {
+        $home = getenv('HOME') ?: __DIR__;
+        return rtrim($home, "\/\\") . DIRECTORY_SEPARATOR . 'Library' . DIRECTORY_SEPARATOR . 'Application Support' . DIRECTORY_SEPARATOR . 'Mobet POS KENYA';
+    }
+    // Linux/other
+    $xdg = getenv('XDG_DATA_HOME') ?: (getenv('HOME') ? rtrim(getenv('HOME'), "\/\\") . DIRECTORY_SEPARATOR . '.local' . DIRECTORY_SEPARATOR . 'share' : __DIR__);
+    return rtrim($xdg, "\/\\") . DIRECTORY_SEPARATOR . 'Mobet POS KENYA';
+}
+
 function sqlite_init($path = null) {
-    $dbfile = $path ?: __DIR__ . '/offline.db';
-    $dir = dirname($dbfile);
-    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    // Preferred DB location in an OS-writable folder for packaged apps
+    $dataDir = get_app_data_dir();
+    if (!is_dir($dataDir)) @mkdir($dataDir, 0755, true);
+
+    // Default DB file inside data dir
+    $defaultDb = $dataDir . DIRECTORY_SEPARATOR . 'app.db';
+    $dbfile = $path ?: $defaultDb;
+
+    // Migrate legacy DB files (if present) into the new data dir on first run
+    $legacyCandidates = [
+        __DIR__ . '/offline.db',
+        __DIR__ . '/database/app.db',
+        __DIR__ . '/app.db'
+    ];
+    foreach ($legacyCandidates as $candidate) {
+        if (file_exists($candidate) && !file_exists($dbfile)) {
+            @copy($candidate, $dbfile);
+            @chmod($dbfile, 0644);
+            // keep the original as a backup (do not delete automatically)
+            @file_put_contents($candidate . '.migrated', date('c') . " -> migrated to " . $dbfile . PHP_EOL, FILE_APPEND | LOCK_EX);
+            break;
+        }
+    }
+
     if (class_exists('SQLite3')) {
         $db = new SQLite3($dbfile);
     } else {
