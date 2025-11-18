@@ -38,14 +38,35 @@ jobs:
             ${{ runner.os }}-node-
 
       - name: Install root dependencies
-        run: npm ci --no-audit --no-fund
+        shell: pwsh
+        run: |
+          if (Test-Path package-lock.json) {
+            Write-Host "package-lock.json found — running npm ci"
+            npm ci --no-audit --no-fund
+          } else {
+            Write-Host "No package-lock.json — running npm install"
+            npm install --no-audit --no-fund
+          }
 
       - name: Build frontend (Vite)
         run: npm run build --if-present
 
       - name: Install electron app dependencies
-        working-directory: electron
-        run: npm ci --no-audit --no-fund
+        shell: pwsh
+        run: |
+          if (-not (Test-Path electron)) { Write-Host "No electron folder found; skipping electron install"; exit 0 }
+          Push-Location electron
+          try {
+            if (Test-Path package-lock.json) {
+              Write-Host "electron/package-lock.json found — running npm ci"
+              npm ci --no-audit --no-fund
+            } else {
+              Write-Host "No electron/package-lock.json — running npm install"
+              npm install --no-audit --no-fund
+            }
+          } finally {
+            Pop-Location
+          }
 
       - name: Download Windows PHP zip
         shell: pwsh
