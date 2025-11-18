@@ -11,7 +11,7 @@ jobs:
     runs-on: windows-latest
     env:
       PHP_VERSION: '8.2.12'
-      PHP_VARIANT: 'nts' # 'nts' (Non Thread Safe) or 'ts' - adjust if needed
+      PHP_VARIANT: 'ts' # default to 'ts' (Thread Safe) to match typical CLI ZTS builds
       PHP_ARCH: 'x64'
       NODE_OPTIONS: '--max_old_space_size=4096'
       ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES: 'true'
@@ -70,19 +70,57 @@ jobs:
 
       - name: Download Windows PHP zip
         shell: pwsh
-        env:
-          PHP_ZIP_URL: ${{ secrets.PHP_ZIP_URL }}
         run: |
           # Prefer a repository secret URL when provided (private or pre-built PHP zip).
-          if ($env:PHP_ZIP_URL -and $env:PHP_ZIP_URL.Trim() -ne '') {
-            Write-Host "Using PHP zip from repository secret PHP_ZIP_URL"
-            $url = $env:PHP_ZIP_URL
-          } else {
-            $phpFile = "php-${{ env.PHP_VERSION }}-${{ env.PHP_VARIANT }}-Win32-${{ env.PHP_ARCH }}.zip"
-            $url = "https://windows.php.net/downloads/releases/archives/$phpFile"
+          $secretUrl = '${{ secrets.PHP_ZIP_URL }}'
+          if ($secretUrl -and $secretUrl.Trim() -ne '') {
+            Write-Host "Attempting download from PHP_ZIP_URL secret: $secretUrl"
+            try {
+              Invoke-WebRequest -Uri $secretUrl -OutFile php.zip -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+              Write-Host "Downloaded PHP from secret URL"
+            } catch {
+              Write-Warning "Download from secret URL failed: $($_.Exception.Message)"
+            }
           }
-          Write-Host "Downloading PHP from: $url"
-          Invoke-WebRequest -Uri $url -OutFile php.zip -UseBasicParsing -TimeoutSec 180
+
+          if (-not (Test-Path php.zip)) {
+            Write-Host "Secret did not yield a zip; attempting windows.php.net candidates"
+            $seen = @{}
+            $variants = @($env:PHP_VARIANT, 'ts', 'nts') | Where-Object { $_ }
+            $archs = @($env:PHP_ARCH, 'x64', 'x86') | Where-Object { $_ }
+            $platforms = @('Win32','Win64')
+
+            $downloaded = $false
+            foreach ($v in $variants) {
+              foreach ($p in $platforms) {
+                foreach ($a in $archs) {
+                  $file = "php-${{ env.PHP_VERSION }}-$v-$p-$a.zip"
+                  if ($seen.ContainsKey($file)) { continue }
+                  $seen[$file] = $true
+                  $url = "https://windows.php.net/downloads/releases/archives/$file"
+                  Write-Host "Checking $url"
+                  try {
+                    $resp = Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -TimeoutSec 30 -ErrorAction Stop
+                    if ($resp.StatusCode -eq 200) {
+                      Write-Host "Found archive: $url — downloading..."
+                      Invoke-WebRequest -Uri $url -OutFile php.zip -UseBasicParsing -TimeoutSec 180 -ErrorAction Stop
+                      $downloaded = $true
+                      break
+                    }
+                  } catch {
+                    Write-Host "Not available: $url ($($_.Exception.Message))"
+                  }
+                }
+                if ($downloaded) { break }
+              }
+              if ($downloaded) { break }
+            }
+
+            if (-not $downloaded) {
+              throw "Failed to download PHP zip. Set a valid repository secret 'PHP_ZIP_URL' pointing at a .zip or update env vars (PHP_VERSION/PHP_VARIANT/PHP_ARCH)."
+            }
+          }
+
           Expand-Archive -Path php.zip -DestinationPath php-extracted
           # Move extracted folder to a predictable name
           $folder = Get-ChildItem -Path php-extracted -Directory | Select-Object -First 1
